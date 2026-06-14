@@ -21,7 +21,7 @@ export default async function HomePage() {
     <div className="space-y-8">
       <section className="max-w-4xl">
         <h1 className="text-3xl font-black tracking-tight sm:text-5xl">
-          Woodhurst World Cup Sweepstake
+          ⚽ Woodhurst World Cup Sweepstake
         </h1>
         <p className="mt-3 text-base font-semibold text-muted sm:text-lg">
           Family bragging rights, updated automatically.
