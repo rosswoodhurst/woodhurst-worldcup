@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# World Cup Sweepstake HQ
 
-## Getting Started
+A small family World Cup 2026 sweepstake app. It fetches fixtures/results from ESPN, stores them in PostgreSQL, calculates the owner league table, and produces WhatsApp-ready text.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 App Router, TypeScript, Tailwind CSS v4
+- Prisma and PostgreSQL
+- Railway web service, Railway Postgres, and Railway cron
+- ESPN public FIFA World Cup scoreboard endpoint
+
+## Local setup
+
+Requirements: Node.js 20.19+, 22.13+, or 24+ and a PostgreSQL database.
+
+```bash
+cp .env.example .env
+npm install
+npm run db:push
+npm run db:seed
+npm run sync:results
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Environment variables
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `CRON_SECRET` | No | Protects `GET /api/sync-results` with `Authorization: Bearer <secret>` |
+
+## Commands
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run lint
+npm test
+npm run db:push
+npm run db:seed
+npm run sync:results
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The sync script fetches the complete tournament range, June 11 through July 19, 2026, in one ESPN request by default. This stores all 104 results and upcoming fixtures, including early-morning UK fixtures that ESPN groups under the previous US scoreboard date. Match upserts make repeated full refreshes safe. It also supports an exact date or range:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run sync:results -- --from 2026-06-11
+npm run sync:results -- --from 2026-06-11 --to 2026-06-27
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The process always disconnects Prisma before exiting, so it can run as an independent cron worker.
 
-## Learn More
+## API routes
 
-To learn more about Next.js, take a look at the following resources:
+- `GET /api/sync-results` - sync the full tournament, optionally using `?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/table` - calculated owner standings
+- `GET /api/fixtures` - stored fixtures/results with sweepstake owners
+- `GET /api/whatsapp/table` - plain text league table
+- `GET /api/whatsapp/today` - plain text today's fixtures/results
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Railway deployment via GitHub
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Push this project to GitHub.
+2. In Railway, choose **New Project → Deploy from GitHub repo** and select the repository.
+3. Add a PostgreSQL service with **New → Database → PostgreSQL**.
+4. In the web service's **Variables** tab, add a reference variable:
 
-## Deploy on Vercel
+   ```text
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   Use the actual name of your Postgres service if it is not `Postgres`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. Optionally add `CRON_SECRET` to protect `GET /api/sync-results`.
+6. In the web service settings, configure:
+
+   ```text
+   Build command: npm run build
+   Pre-deploy command: npm run db:push
+   Start command: npm run start
+   ```
+
+7. Deploy the web service, then use its Railway shell or a one-off command to run:
+
+   ```bash
+   npm run db:seed
+   npm run sync:results
+   ```
+
+8. In the web service's **Settings → Networking**, generate a public domain.
+9. Add a second service from the same GitHub repository and name it `Results Cron`.
+10. Give the cron service the same `DATABASE_URL` reference variable.
+11. Set the cron service's start command to `npm run sync:results`.
+12. In **Settings → Cron Schedule**, set `*/15 * * * *` to run every 15 minutes. Railway cron schedules use UTC and have a minimum frequency of five minutes.
+13. Verify `/`, `/fixtures`, and `/admin` on the generated domain.
+
+The cron service does not call the web app. It starts, fetches ESPN, updates PostgreSQL, disconnects, and exits.
+
+## Data notes
+
+- ESPN event IDs are unique and matches are upserted, so repeated syncs are safe.
+- Team aliases are centralized in `lib/sweepstake.ts`.
+- Only completed matches with numeric scores affect standings.
+- Owner sorting is points, goal difference, goals scored, then owner name.
+
+## Known limitations
+
+- ESPN's endpoint is public but undocumented, so defensive parsing is included and field changes may require updates.
+- Dates and fixture times use the server's configured timezone.
+- There is no authentication in v1. Set `CRON_SECRET` if exposing the sync endpoint publicly.

@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Owner {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  teams     Team[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Team {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  normalizedName String   @unique
+  flagEmoji      String
+  ownerId        String
+  owner          Owner    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  espnEventId  String   @unique
+  kickoff      DateTime
+  status       String
+  statusDetail String?
+  completed    Boolean  @default(false)
+  homeTeam     String
+  awayTeam     String
+  homeAbbr     String?
+  awayAbbr     String?
+  homeScore    Int?
+  awayScore    Int?
+  rawJson      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([kickoff])
+  @@index([completed])
+}
+
+model SyncLog {
+  id             String    @id @default(cuid())
+  status         String
+  message        String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  matchesFetched Int       @default(0)
+  matchesUpserted Int      @default(0)
+
+  @@index([startedAt])
+}
